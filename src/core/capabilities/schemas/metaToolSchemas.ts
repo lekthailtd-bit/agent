@@ -17,6 +17,10 @@ export const ToolListInputSchema = z.object({
   cursor: z.string().optional(),
 });
 
+export const ToolInstructionsInputSchema = z.object({
+  server: z.string().optional(),
+});
+
 export const ToolSchemaInputSchema = z.object({
   server: z.string(),
   toolName: z.string(),
@@ -37,6 +41,26 @@ export const ToolMetadataSchema = z.object({
   server: z.string(),
   description: z.string(),
   tags: z.array(z.string()).optional(),
+});
+
+export const ToolInstructionsServerSchema = z.object({
+  name: z.string(),
+  toolCount: z.number(),
+  hasInstructions: z.boolean(),
+  instructions: z.string().optional(),
+});
+
+export const ToolInstructionsOutputSchema = z.object({
+  mode: z.literal('metatool'),
+  instructions: z.string(),
+  servers: z.array(ToolInstructionsServerSchema),
+  totalTools: z.number(),
+  error: z
+    .object({
+      type: z.enum(['validation', 'upstream', 'not_found', 'internal']),
+      message: z.string(),
+    })
+    .optional(),
 });
 
 export const ToolListOutputSchema = z.object({
@@ -81,9 +105,11 @@ export const ToolInvokeOutputSchema = z.object({
  */
 
 export type ToolListInput = z.infer<typeof ToolListInputSchema>;
+export type ToolInstructionsInput = z.infer<typeof ToolInstructionsInputSchema>;
 export type ToolSchemaInput = z.infer<typeof ToolSchemaInputSchema>;
 export type ToolInvokeInput = z.infer<typeof ToolInvokeInputSchema>;
 export type ToolMetadata = z.infer<typeof ToolMetadataSchema>;
+export type ToolInstructionsOutput = z.infer<typeof ToolInstructionsOutputSchema>;
 export type ToolListOutput = z.infer<typeof ToolListOutputSchema>;
 export type ToolSchemaOutput = z.infer<typeof ToolSchemaOutputSchema>;
 export type ToolInvokeOutput = z.infer<typeof ToolInvokeOutputSchema>;

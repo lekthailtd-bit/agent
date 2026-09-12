@@ -20,6 +20,7 @@ import {
   createUpdateTool,
 } from '@src/core/capabilities/internal/installationTools.js';
 import {
+  createToolInstructionsTool,
   createToolInvokeTool,
   createToolListTool,
   createToolSchemaTool,
@@ -250,7 +251,7 @@ export class InternalCapabilitiesProvider extends EventEmitter {
     // === Lazy Tools (controlled by lazyLoading.enabled) ===
     // Only expose lazy tools when orchestrator is wired to avoid exposing non-functional tools
     if (this.flagManager.isToolEnabled('lazyTools') && this.lazyLoadingOrchestrator) {
-      tools.push(createToolListTool(), createToolSchemaTool(), createToolInvokeTool());
+      tools.push(createToolInstructionsTool(), createToolListTool(), createToolSchemaTool(), createToolInvokeTool());
     }
 
     return tools;
@@ -268,6 +269,7 @@ export class InternalCapabilitiesProvider extends EventEmitter {
 
     switch (toolName) {
       // === Lazy Tools ===
+      case 'tool_instructions':
       case 'tool_list':
       case 'tool_schema':
       case 'tool_invoke': {

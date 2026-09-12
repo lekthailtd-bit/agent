@@ -11,7 +11,7 @@ import { AsyncLoadingOrchestrator } from './asyncLoadingOrchestrator.js';
 import { AsyncLoadingOrchestratorEvent } from './asyncLoadingOrchestratorEvent.js';
 import { AggregatedCapabilities, CapabilityAggregator } from './capabilityAggregator.js';
 import { type CapabilityVisibility, getCapabilityVisibleServerNames } from './capabilityVisibility.js';
-import { MetaToolProvider } from './metaToolProvider.js';
+import { MetaToolProvider, type ServerInstructionsProvider } from './metaToolProvider.js';
 import { SchemaCache, SchemaCacheConfig } from './schemaCache.js';
 import { ToolRegistry } from './toolRegistry.js';
 
@@ -460,11 +460,15 @@ export class LazyLoadingOrchestrator extends EventEmitter {
     return this.metaToolProvider.callMetaTool(name, args, visibility);
   }
 
+  public setServerInstructionsProvider(provider?: ServerInstructionsProvider): void {
+    this.metaToolProvider?.setServerInstructionsProvider(provider);
+  }
+
   /**
    * Check if a tool call is a meta-tool
    */
   public isMetaTool(name: string): boolean {
-    return name === 'tool_list' || name === 'tool_schema' || name === 'tool_invoke';
+    return name === 'tool_instructions' || name === 'tool_list' || name === 'tool_schema' || name === 'tool_invoke';
   }
 
   /**

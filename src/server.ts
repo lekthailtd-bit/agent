@@ -163,6 +163,7 @@ async function setupServerAsync(
   if (lazyLoadingEnabled) {
     lazyLoadingOrchestrator = new LazyLoadingOrchestrator(clients, agentConfig, asyncOrchestrator);
     await lazyLoadingOrchestrator.initialize();
+    lazyLoadingOrchestrator.setServerInstructionsProvider((server) => instructionAggregator.getServerInstructions(server));
     serverManager.setLazyLoadingOrchestrator(lazyLoadingOrchestrator);
 
     // Inject lazy loading orchestrator into internal capabilities provider
@@ -242,6 +243,7 @@ async function setupServerSync(
   if (lazyLoadingEnabled) {
     lazyLoadingOrchestrator = new LazyLoadingOrchestrator(clients, agentConfig, undefined);
     await lazyLoadingOrchestrator.initialize();
+    lazyLoadingOrchestrator.setServerInstructionsProvider((server) => instructionAggregator.getServerInstructions(server));
     serverManager.setLazyLoadingOrchestrator(lazyLoadingOrchestrator);
 
     // Inject lazy loading orchestrator into internal capabilities provider

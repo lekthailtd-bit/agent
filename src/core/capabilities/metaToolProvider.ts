@@ -6,9 +6,12 @@ import type { Tool } from '@src/sdk/contracts/index.js';
 import { zodToInputSchema, zodToOutputSchema } from '@src/utils/schemaUtils.js';
 
 import { CapabilityCatalog } from './capabilityCatalog.js';
-import type { CapabilityVisibility } from './capabilityVisibility.js';
+import { getCapabilityVisibleServerNames, type CapabilityVisibility } from './capabilityVisibility.js';
 import { SchemaCache } from './schemaCache.js';
 import {
+  ToolInstructionsInputSchema,
+  ToolInstructionsOutput,
+  ToolInstructionsOutputSchema,
   ToolInvokeInputSchema,
   ToolInvokeOutput,
   ToolInvokeOutputSchema,
@@ -24,6 +27,7 @@ import { type ToolMetadata, ToolRegistry } from './toolRegistry.js';
 /**
  * Result types for meta-tools
  */
+export type GetInstructionsResult = ToolInstructionsOutput;
 export type ListToolsResult = ToolListOutput;
 export type DescribeToolResult = ToolSchemaOutput;
 export type CallToolResult = ToolInvokeOutput;
@@ -32,6 +36,7 @@ export type CallToolResult = ToolInvokeOutput;
  * Function to load tool schema from upstream server
  */
 export type SchemaLoader = (server: string, toolName: string) => Promise<Tool>;
+export type ServerInstructionsProvider = (server: string) => string | undefined;
 
 /**
  * Arguments for tool_list
@@ -42,6 +47,13 @@ export interface ListAvailableToolsArgs {
   tag?: string;
   limit?: number;
   cursor?: string;
+}
+
+/**
+ * Arguments for tool_instructions
+ */
+export interface GetInstructionsArgs {
+  server?: string;
 }
 
 /**
@@ -69,9 +81,10 @@ export type ToolRegistryProvider = () => ToolRegistry;
 
 /**
  * MetaToolProvider provides meta-tools for lazy loading:
- * 1. tool_list - List all tools (names + descriptions only)
- * 2. tool_schema - Get full tool schema on-demand
- * 3. tool_invoke - Invoke any tool by server and name
+ * 1. tool_instructions - Explain lazy discovery and visible downstream servers
+ * 2. tool_list - List all tools (names + descriptions only)
+ * 3. tool_schema - Get full tool schema on-demand
+ * 4. tool_invoke - Invoke any tool by server and name
  *
  * @example
  * ```typescript
@@ -88,6 +101,7 @@ export class MetaToolProvider {
   private defaultVisibility?: CapabilityVisibility;
   private capabilityCatalog: CapabilityCatalog;
   private templateHashProvider?: TemplateHashProvider;
+  private serverInstructionsProvider?: ServerInstructionsProvider;
 
   constructor(
     getToolRegistry: ToolRegistryProvider,
@@ -96,6 +110,7 @@ export class MetaToolProvider {
     loadSchema?: SchemaLoader,
     defaultVisibility?: CapabilityVisibility,
     templateHashProvider?: TemplateHashProvider,
+    serverInstructionsProvider?: ServerInstructionsProvider,
   ) {
     this.getToolRegistry = getToolRegistry;
     this.schemaCache = schemaCache;
@@ -103,6 +118,7 @@ export class MetaToolProvider {
     this.loadSchema = loadSchema;
     this.defaultVisibility = defaultVisibility;
     this.templateHashProvider = templateHashProvider;
+    this.serverInstructionsProvider = serverInstructionsProvider;
     this.capabilityCatalog = new CapabilityCatalog({
       getToolRegistry,
       schemaCache,
@@ -112,6 +128,10 @@ export class MetaToolProvider {
       templateHashProvider,
       getServerConfigs: getConfiguredServerTargets,
     });
+  }
+
+  public setServerInstructionsProvider(provider?: ServerInstructionsProvider): void {
+    this.serverInstructionsProvider = provider;
   }
 
   /**
@@ -131,10 +151,15 @@ export class MetaToolProvider {
   }
 
   /**
-   * Get all available meta-tools (3 discovery tools)
+   * Get all available meta-tools.
    */
   public getMetaTools(): Tool[] {
-    return [this.createListToolsMetaTool(), this.createDescribeToolMetaTool(), this.createCallToolMetaTool()];
+    return [
+      this.createInstructionsMetaTool(),
+      this.createListToolsMetaTool(),
+      this.createDescribeToolMetaTool(),
+      this.createCallToolMetaTool(),
+    ];
   }
 
   /**
@@ -144,8 +169,24 @@ export class MetaToolProvider {
     name: string,
     args: unknown,
     visibility?: CapabilityVisibility,
-  ): Promise<ListToolsResult | DescribeToolResult | CallToolResult> {
+  ): Promise<GetInstructionsResult | ListToolsResult | DescribeToolResult | CallToolResult> {
     switch (name) {
+      case 'tool_instructions': {
+        const parsed = ToolInstructionsInputSchema.safeParse(args);
+        if (!parsed.success) {
+          return {
+            mode: 'metatool',
+            instructions: '',
+            servers: [],
+            totalTools: 0,
+            error: {
+              type: 'validation',
+              message: `Invalid arguments for tool_instructions: ${parsed.error.message}`,
+            },
+          } as GetInstructionsResult;
+        }
+        return this.getInstructions(parsed.data, visibility);
+      }
       case 'tool_list': {
         const parsed = ToolListInputSchema.safeParse(args);
         if (!parsed.success) {
@@ -198,10 +239,74 @@ export class MetaToolProvider {
           hasMore: false,
           error: {
             type: 'not_found',
-            message: `Unknown meta-tool: ${name}. Valid meta-tools are: tool_list, tool_schema, tool_invoke`,
+            message:
+              `Unknown meta-tool: ${name}. Valid meta-tools are: ` +
+              'tool_instructions, tool_list, tool_schema, tool_invoke',
           },
         } as ListToolsResult;
     }
+  }
+
+  private createInstructionsMetaTool(): Tool {
+    return {
+      name: 'tool_instructions',
+      description:
+        'Get instructions for using 1MCP lazy discovery and the visible downstream server namespace. ' +
+        "Call without arguments for the gateway playbook and server summary, or pass server to include that server's instructions.",
+      inputSchema: zodToInputSchema(ToolInstructionsInputSchema) as Tool['inputSchema'],
+      outputSchema: zodToOutputSchema(ToolInstructionsOutputSchema) as Tool['outputSchema'],
+    };
+  }
+
+  private getInstructions(args: GetInstructionsArgs, visibility?: CapabilityVisibility): GetInstructionsResult {
+    const registry = this.getToolRegistry();
+    const visibleServerNames = visibility
+      ? getCapabilityVisibleServerNames(visibility)
+      : new Set(registry.getServers());
+    const availableServers = registry.getServers().filter((server) => visibleServerNames.has(server));
+
+    if (args.server && !availableServers.includes(args.server)) {
+      return {
+        mode: 'metatool',
+        instructions: this.getLazyDiscoveryInstructions(),
+        servers: [],
+        totalTools: 0,
+        error: {
+          type: 'not_found',
+          message: `Server not found or not visible: ${args.server}`,
+        },
+      };
+    }
+
+    const selectedServers = args.server ? [args.server] : availableServers;
+    const toolCounts = registry.getToolCountByServer();
+    const servers = selectedServers.map((name) => {
+      const instructions = this.serverInstructionsProvider?.(name)?.trim();
+      return {
+        name,
+        toolCount: toolCounts[name] ?? 0,
+        hasInstructions: !!instructions,
+        ...(args.server && instructions ? { instructions } : {}),
+      };
+    });
+
+    return {
+      mode: 'metatool',
+      instructions: this.getLazyDiscoveryInstructions(),
+      servers,
+      totalTools: servers.reduce((sum, server) => sum + server.toolCount, 0),
+    };
+  }
+
+  private getLazyDiscoveryInstructions(): string {
+    return [
+      'Use tool_list to discover downstream tools.',
+      'The server parameter means a downstream 1MCP server name returned by tool_list; do not use the outer gateway name.',
+      'The pattern parameter is an anchored glob over tool names. Use *term* for substring matching, for example *browser*.',
+      'A filtered zero result only means those filters matched nothing. Retry tool_list({ limit: 20 }) without server or pattern before diagnosing a gateway or server failure.',
+      'Treat server and tool names returned by tool_list as authoritative.',
+      'Call tool_schema before the first tool_invoke for a tool so arguments are validated against the current schema.',
+    ].join('\n');
   }
 
   /**
