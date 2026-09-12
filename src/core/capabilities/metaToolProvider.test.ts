@@ -66,9 +66,16 @@ describe('MetaToolProvider', () => {
   });
 
   describe('getMetaTools', () => {
-    it('should return exactly 3 meta-tools', () => {
+    it('should return exactly 4 meta-tools', () => {
       const metaTools = provider.getMetaTools();
-      expect(metaTools).toHaveLength(3);
+      expect(metaTools).toHaveLength(4);
+    });
+
+    it('should include tool_instructions', () => {
+      const metaTools = provider.getMetaTools();
+      const instructionsTool = metaTools.find((t) => t.name === 'tool_instructions');
+      expect(instructionsTool).toBeDefined();
+      expect(instructionsTool?.description).toContain('lazy discovery');
     });
 
     it('should include tool_list', () => {
@@ -105,6 +112,63 @@ describe('MetaToolProvider', () => {
       expect(callTool?.inputSchema.required).toContain('server');
       expect(callTool?.inputSchema.required).toContain('toolName');
       expect(callTool?.inputSchema.required).toContain('args');
+    });
+  });
+
+  describe('callMetaTool - tool_instructions', () => {
+    it('should return the discovery playbook and visible server summary', async () => {
+      const result = await provider.callMetaTool('tool_instructions', {}, visibility('filesystem'));
+
+      expect('instructions' in result && result.instructions).toContain('tool_list({ limit: 20 })');
+      expect('instructions' in result && result.instructions).toContain('*browser*');
+      if ('servers' in result && 'totalTools' in result) {
+        expect(result.servers).toEqual([
+          {
+            name: 'filesystem',
+            toolCount: 3,
+            hasInstructions: false,
+          },
+        ]);
+        expect(result.totalTools).toBe(3);
+      } else {
+        throw new Error('Expected GetInstructionsResult');
+      }
+    });
+
+    it('should include downstream instructions only when a server is requested', async () => {
+      provider.setServerInstructionsProvider((server) =>
+        server === 'filesystem' ? 'Prefer read-only filesystem operations.' : undefined,
+      );
+
+      const summary = await provider.callMetaTool('tool_instructions', {}, visibility('filesystem'));
+      const detail = await provider.callMetaTool(
+        'tool_instructions',
+        { server: 'filesystem' },
+        visibility('filesystem'),
+      );
+
+      if ('servers' in summary && 'servers' in detail) {
+        expect(summary.servers[0]).not.toHaveProperty('instructions');
+        expect(detail.servers[0]).toMatchObject({
+          name: 'filesystem',
+          hasInstructions: true,
+          instructions: 'Prefer read-only filesystem operations.',
+        });
+      } else {
+        throw new Error('Expected GetInstructionsResult');
+      }
+    });
+
+    it('should reject a server outside the request visibility', async () => {
+      const result = await provider.callMetaTool(
+        'tool_instructions',
+        { server: 'filesystem' },
+        visibility(),
+      );
+
+      expect('error' in result && result.error).toMatchObject({
+        type: 'not_found',
+      });
     });
   });
 

@@ -1,8 +1,38 @@
 import { describe, expect, it } from 'vitest';
 
-import { createToolInvokeTool, createToolListTool, createToolSchemaTool, LAZY_TOOLS } from './lazyTools.js';
+import {
+  createToolInstructionsTool,
+  createToolInvokeTool,
+  createToolListTool,
+  createToolSchemaTool,
+  LAZY_TOOLS,
+} from './lazyTools.js';
 
 describe('lazyTools', () => {
+  describe('createToolInstructionsTool', () => {
+    it('should create a read-only tool_instructions tool', () => {
+      const tool = createToolInstructionsTool();
+
+      expect(tool.name).toBe('tool_instructions');
+      expect(tool.description).toContain('lazy discovery');
+      expect(tool.inputSchema).toHaveProperty('type', 'object');
+      expect(tool.outputSchema).toBeDefined();
+      expect(tool.annotations).toMatchObject({
+        readOnlyHint: true,
+        openWorldHint: false,
+      });
+    });
+
+    it('should allow an optional downstream server selector', () => {
+      const tool = createToolInstructionsTool();
+      const props = tool.inputSchema.properties as Record<string, unknown>;
+      const required = tool.inputSchema.required || [];
+
+      expect(props).toHaveProperty('server');
+      expect(required).not.toContain('server');
+    });
+  });
+
   describe('createToolListTool', () => {
     it('should create tool_list tool with correct structure', () => {
       const tool = createToolListTool();
@@ -126,9 +156,10 @@ describe('lazyTools', () => {
   });
 
   describe('LAZY_TOOLS constant', () => {
-    it('should contain all three lazy tool names', () => {
+    it('should contain all four lazy tool names', () => {
       expect(LAZY_TOOLS).toBeDefined();
-      expect(LAZY_TOOLS).toHaveLength(3);
+      expect(LAZY_TOOLS).toHaveLength(4);
+      expect(LAZY_TOOLS).toContain('tool_instructions');
       expect(LAZY_TOOLS).toContain('tool_list');
       expect(LAZY_TOOLS).toContain('tool_schema');
       expect(LAZY_TOOLS).toContain('tool_invoke');
@@ -141,19 +172,26 @@ describe('lazyTools', () => {
 
       // Verify const assertion creates readonly-like behavior
       // (in TypeScript, const assertions create readonly tuples)
-      expect(LAZY_TOOLS[0]).toBe('tool_list');
-      expect(LAZY_TOOLS[1]).toBe('tool_schema');
-      expect(LAZY_TOOLS[2]).toBe('tool_invoke');
+      expect(LAZY_TOOLS[0]).toBe('tool_instructions');
+      expect(LAZY_TOOLS[1]).toBe('tool_list');
+      expect(LAZY_TOOLS[2]).toBe('tool_schema');
+      expect(LAZY_TOOLS[3]).toBe('tool_invoke');
     });
   });
 
   describe('tool export consistency', () => {
     it('should create tools that match Tool interface', () => {
+      const toolInstructions = createToolInstructionsTool();
       const toolList = createToolListTool();
       const toolSchema = createToolSchemaTool();
       const toolInvoke = createToolInvokeTool();
 
       // Verify each tool matches the Tool interface
+      expect(toolInstructions).toMatchObject({
+        name: expect.any(String),
+        description: expect.any(String),
+        inputSchema: expect.any(Object),
+      });
       expect(toolList).toMatchObject({
         name: expect.any(String),
         description: expect.any(String),
@@ -172,14 +210,15 @@ describe('lazyTools', () => {
     });
 
     it('should have unique tool names', () => {
+      const toolInstructions = createToolInstructionsTool();
       const toolList = createToolListTool();
       const toolSchema = createToolSchemaTool();
       const toolInvoke = createToolInvokeTool();
 
-      const names = [toolList.name, toolSchema.name, toolInvoke.name];
+      const names = [toolInstructions.name, toolList.name, toolSchema.name, toolInvoke.name];
       const uniqueNames = new Set(names);
 
-      expect(uniqueNames.size).toBe(3);
+      expect(uniqueNames.size).toBe(4);
     });
   });
 
