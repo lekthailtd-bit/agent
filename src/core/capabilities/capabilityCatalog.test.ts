@@ -319,4 +319,16 @@ describe('CapabilityCatalog', () => {
       shouldNotifyListChanged: true,
     });
   });
+
+  it('keeps the last published tools visible while the registry snapshot is stale', async () => {
+    registry = registry.withConnections(outboundConnections, () => false);
+
+    const result = await createCatalog().listVisibleTools({});
+
+    expect(result.tools.map((tool) => `${tool.server}/${tool.name}`).sort()).toEqual([
+      'filesystem/read_file',
+      'template-server/template_tool',
+    ]);
+    expect(result.totalCount).toBe(2);
+  });
 });
