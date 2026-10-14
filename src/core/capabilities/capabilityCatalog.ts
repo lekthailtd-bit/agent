@@ -379,7 +379,9 @@ export class CapabilityCatalog {
 
   private visibleToolRegistry(visibility?: CapabilityVisibility): ToolRegistry {
     let registry = this.deps.getToolRegistry();
-    if (registry.isCurrent?.() === false) return ToolRegistry.empty();
+    // Keep the last published registry visible while capability refresh is in flight.
+    // Connected-candidate filtering below and invokeVisibleTool's connection identity checks
+    // still prevent routing through stale or disconnected backends.
     const effectiveVisibility = visibility ?? this.deps.defaultVisibility;
     if (effectiveVisibility !== undefined) {
       const connectedCandidates = new Map(
