@@ -379,7 +379,10 @@ export class CapabilityCatalog {
 
   private visibleToolRegistry(visibility?: CapabilityVisibility): ToolRegistry {
     let registry = this.deps.getToolRegistry();
-    if (registry.isCurrent?.() === false) return ToolRegistry.empty();
+    // A runtime capability refresh can temporarily invalidate the published snapshot
+    // while backend connections are being replaced. Keep the last published registry
+    // visible during that window; connected-candidate filtering below and invocation
+    // connection-identity checks still prevent routing to disconnected backends.
     const effectiveVisibility = visibility ?? this.deps.defaultVisibility;
     if (effectiveVisibility !== undefined) {
       const connectedCandidates = new Map(
