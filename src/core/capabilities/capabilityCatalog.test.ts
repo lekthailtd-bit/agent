@@ -130,6 +130,18 @@ describe('CapabilityCatalog', () => {
     expect(result.servers).toEqual(['filesystem', 'template-server']);
   });
 
+  it('keeps the last published registry visible while a refresh is in progress', async () => {
+    registry = registry.withConnections(outboundConnections, () => false);
+
+    const result = await createCatalog().listVisibleTools({});
+
+    expect(result.tools.map((tool) => `${tool.server}/${tool.name}`).sort()).toEqual([
+      'filesystem/read_file',
+      'template-server/template_tool',
+    ]);
+    expect(result.servers).toEqual(['filesystem', 'template-server']);
+  });
+
   it('uses effective descriptions consistently for listing and full-schema inspection', async () => {
     const upstreamSchema: Tool = {
       name: 'read_file',
